@@ -1,3 +1,33 @@
 .env
 openai-env/
 
+
+
+# Python 가상 환경
+venv/
+env/
+.venv/
+
+# 컴파일된 Python 파일
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 로그 파일
+*.log
+
+# 임시 파일 및 디렉토리
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# IDE 설정 파일
+.idea/
+.vscode/
+
+# 빌드 출력물
+build/
+dist/
+*.egg-info/
