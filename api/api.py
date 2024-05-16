@@ -1,10 +1,9 @@
 from flask import request, jsonify
-# from fine_tuning.AI import callGpt
-
+from fine_tuning.AI import callGpt
+from login import google_authorize
 
 def receive_letter():
     data = request.json
-    print(data)
     title = data.get('title')  
     letter = data.get('letter')
 
@@ -13,9 +12,20 @@ def receive_letter():
         return jsonify({"error": "데이터가 충분하지 않습니다."}), 400
 
     else:
-        print("문항:", title)
-        print("내용:", letter)
-    # feedback = callGpt(title, letter)
-        feedback = "당신의 글은 개구립니다.🤮🤮"
+        # print("문항:", title)
+        # print("내용:", letter)
+        feedback = callGpt(letter, title)
+        print(feedback)
         return jsonify(feedback)
 
+def receive_code():
+    data = request.json
+    code = data.get('code')  
+
+    if not code:
+        return jsonify({"error": "code가 도착하지 않았습니다."}), 400
+
+    else:
+        jwt = google_authorize(code)
+        print(jwt)
+        return jsonify(jwt)
