@@ -17,15 +17,3 @@ def receive_letter():
         feedback = callGpt(letter, title)
         print(feedback)
         return jsonify(feedback)
-
-def receive_code():
-    data = request.json
-    code = data.get('code')  
-
-    if not code:
-        return jsonify({"error": "code가 도착하지 않았습니다."}), 400
-
-    else:
-        jwt = google_authorize(code)
-        print(jwt)
-        return jsonify(jwt)
