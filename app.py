@@ -36,6 +36,7 @@ def user_info():
     print(user_info)
     # joinUser(name, email, detail)
     MONGO_URI = database_url
+
     client = MongoClient(MONGO_URI)
     db = client.monoletter
     user = {'name':name, 'email':email, 'detail' : detail}
