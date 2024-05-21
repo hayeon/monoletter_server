@@ -3,14 +3,15 @@ from flask_cors import CORS
 from api import api # api.py에서 함수를 import
 import os
 import threading
-from google_authorize import google_authorize
 from pymongo import MongoClient
 
 
 app = Flask(__name__)
 CORS(app)  
-
+database_url = os.getenv('MONGO_URI')
 @app.route('/')
+
+
 def run_scrapy():
     os.chdir('jobkorea')
     os.system('scrapy crawl test')
@@ -34,7 +35,8 @@ def user_info():
     detail = user_info.get('detail')
     print(user_info)
     # joinUser(name, email, detail)
-    MONGO_URI = "mongodb+srv://hayeon:yho39064475@monoletter.3xsxz4k.mongodb.net/?retryWrites=true&w=majority&appName=monoletter"
+    MONGO_URI = database_url
+
     client = MongoClient(MONGO_URI)
     db = client.monoletter
     user = {'name':name, 'email':email, 'detail' : detail}
@@ -56,22 +58,6 @@ def user_info():
         }
 
     return jsonify(response)
-
-
-    
-
-
-
-
-
-# def joinUser(name, email, detail):
-#     MONGO_URI = "mongodb+srv://hayeon:yho39064475@monoletter.3xsxz4k.mongodb.net/?retryWrites=true&w=majority&appName=monoletter"
-#     client = MongoClient(MONGO_URI)
-#     db = client.monoletter
-#     user = {'name':name, 'email':email, 'detail' : detail}
-#     db.users.insert_one(user)
-#     return True
-
     
     
 if __name__ == '__main__':
