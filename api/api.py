@@ -1,6 +1,6 @@
 from flask import request, jsonify
 from fine_tuning.AI import callGpt
-from login import google_authorize
+
 
 def receive_letter():
     data = request.json
