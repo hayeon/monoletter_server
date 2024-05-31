@@ -67,30 +67,28 @@ def user_info():
     except Exception as e:
         print(f"알 수 없는 오류 발생: {e}")
         return jsonify({'status': 500, 'message': 'An unexpected error occurred.'}), 500
-#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-@app.route('/updatedetail', methods=['PUT'])
-def update_detail():
-    # 클라이언트로부터 이메일과 새로운 detail을 받음
-    user_info = request.json
-    email = user_info.get('email')
-    new_detail = user_info.get('detail')
+#-------------------자소서 체크---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+@app.route('/letterCheck', methods=['post'])
+def get_letters():
+    email = request.json.get('email')
+    print(email)
     MONGO_URI = database_url
     client = MongoClient(MONGO_URI)
     db = client.monoletter
+    if not email:
+        return jsonify({'error': 'Missing email!'}), 400
+    # 해당 이메일을 가진 사용자의 최근 자기소개서 찾기
+    letters = db.letters.find_one({"email": email}, sort=[('_id', -1)])
     
-    # 이메일과 일치하는 사용자 찾기
-    result = db.users.update_one(
-        {"email": email},
-        {"$set": {"detail": new_detail}}
-    )
-    
-    # 업데이트 성공 여부에 따라 응답 반환
-    if result.matched_count:
-        print("detail을 db에 저장하였습니다")
-        return jsonify({"msg": "Detail updated successfully"}), 200
+    if not letters:
+        # 저장된 자기소개서가 없으면 false 반환
+        return jsonify(False), 200
     else:
-        print("detail을 db에 저장하지 못했습니다")
-        return jsonify({"msg": "User not found"}), 404
+        # 자기소개서가 있으면 maintitle_id와 _id 반환
+        return jsonify({
+            'maintitle_id': str(letters['maintitle_id']),
+            '_id': str(letters['_id'])
+        }), 200
 
     #-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 @app.route('/add_letter', methods=['POST'])
@@ -99,12 +97,12 @@ def add_letter():
     email = data.get('email')
     listTitle = data.get('listTitle')
     question = data.get('question')
-    letter = data.get('letter ')
+    letter = data.get('letter')
     feedback = data.get('feedback')
     
     if not email or not listTitle or not question or not letter or not feedback:
         return jsonify({'status': 400, 'message': 'Missing required fields'}), 400
-
+    
     MONGO_URI = database_url
     client = MongoClient(MONGO_URI)
     db = client.monoletter
@@ -115,25 +113,19 @@ def add_letter():
         return jsonify({'status': 400, 'message': 'User not found'}), 400
 
     user_id = user['_id']
-
     letter_detail = {
         "question": question,
         "letter": letter,
         "feedback": feedback
     }
-
     # listTitle이 같은 문서를 찾아서 업데이트 또는 새로 삽입
-    result = db.letters.update_one(
-        {"user_id": user_id, "listTitle": listTitle},
-        {"$push": {"details": letter_detail}},
-        upsert=True
-    )
-    if result.matched_count:
+    try:
+        db.letters.update_one({"user_id": user_id, "listTitle": listTitle},{"$push": {"details": letter_detail}}, upsert=True)
         print("자소서를 db에 저장하였습니다")
         return jsonify({'status': 200, 'message': 'Letter added or updated successfully'}), 200
-    else:
-        print("자소서를 db에 저장하지 못했습니다")
-        return jsonify({'status': 200, 'message': 'Letter added Fale'}), 500
+    except Exception as e:
+        print(e)
+        return jsonify({'status': 200, 'messarge': 'Lette added Fale'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
