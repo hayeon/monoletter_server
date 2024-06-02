@@ -4,7 +4,8 @@ from api import api # api.py에서 함수를 import
 import os
 import threading
 from pymongo import MongoClient
-from pymongo.errors import PyMongoError
+from bson.objectid import ObjectId 
+
 
 app = Flask(__name__)
 CORS(app)  
@@ -34,7 +35,6 @@ def user_info():
         email = user_info.get('email')
         name = user_info.get('name')
         detail = user_info.get('detail')
-        print(user_info)
         MONGO_URI = database_url
         client = MongoClient(MONGO_URI)
         db = client.monoletter
@@ -59,7 +59,6 @@ def user_info():
                 'message': 'Email is already registered.'
             }
        
-        print(response)
         return jsonify(response)
     except PyMongoError as e:
         print(f"데이터베이스 오류 발생: {e}")
@@ -67,68 +66,299 @@ def user_info():
     except Exception as e:
         print(f"알 수 없는 오류 발생: {e}")
         return jsonify({'status': 500, 'message': 'An unexpected error occurred.'}), 500
+
 #-------------------자소서 체크---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-@app.route('/letterCheck', methods=['post'])
+@app.route('/lettercheck', methods=['POST'])
 def get_letters():
     email = request.json.get('email')
-    print(email)
     MONGO_URI = database_url
     client = MongoClient(MONGO_URI)
     db = client.monoletter
+    
     if not email:
         return jsonify({'error': 'Missing email!'}), 400
     # 해당 이메일을 가진 사용자의 최근 자기소개서 찾기
-    letters = db.letters.find_one({"email": email}, sort=[('_id', -1)])
-    
+    user = db.users.find_one({"email": email})
+    userId = user['_id']
+    # 가장 최근에 저장된 사용자의 letters 문서 찾기
+    letters = db.letters.find_one({"userId": userId}, sort=[('_id', -1)])
     if not letters:
-        # 저장된 자기소개서가 없으면 false 반환
         return jsonify(False), 200
     else:
-        # 자기소개서가 있으면 maintitle_id와 _id 반환
-        return jsonify({
-            'maintitle_id': str(letters['maintitle_id']),
-            '_id': str(letters['_id'])
-        }), 200
+    # 자기소개서가 있으면 maintitle_id와 가장 마지막 subTitle_id 반환
+    # subTitles 배열에서 가장 마지막 요소에 접근
+        last_subTitle = letters['subTitles'][-1] if letters['subTitles'] else None
+        last_subTitle_id = last_subTitle['subTitle_id'] if last_subTitle else None
 
-    #-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-@app.route('/add_letter', methods=['POST'])
+    return jsonify({
+        'mainTitle_id': str(letters['_id']),
+        'subTitle_id': str(last_subTitle_id) if last_subTitle_id else None
+    }), 200
+#-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+@app.route('/addletter', methods=['POST'])
 def add_letter():
+
     data = request.json
     email = data.get('email')
-    listTitle = data.get('listTitle')
-    question = data.get('question')
-    letter = data.get('letter')
-    feedback = data.get('feedback')
+    mainTitle = data.get('mainTitle')
     
-    if not email or not listTitle or not question or not letter or not feedback:
+    if not email or not mainTitle:
         return jsonify({'status': 400, 'message': 'Missing required fields'}), 400
     
     MONGO_URI = database_url
     client = MongoClient(MONGO_URI)
     db = client.monoletter
 
-    # 이메일 일치 사용자
+    # 이메일 일치 사용자 확인
     user = db.users.find_one({"email": email})
     if not user:
         return jsonify({'status': 400, 'message': 'User not found'}), 400
-
-    user_id = user['_id']
-    letter_detail = {
-        "question": question,
-        "letter": letter,
-        "feedback": feedback
-    }
-    # listTitle이 같은 문서를 찾아서 업데이트 또는 새로 삽입
+    userId = user['_id']
+    # 자기소개서 저장
     try:
-        db.letters.update_one({"user_id": user_id, "listTitle": listTitle},{"$push": {"details": letter_detail}}, upsert=True)
-        print("자소서를 db에 저장하였습니다")
-        return jsonify({'status': 200, 'message': 'Letter added or updated successfully'}), 200
+        subTitle_id = ObjectId()
+        letter_data = {
+             "userId": userId,
+            "mainTitle": mainTitle,
+            "subTitles": [{
+                "subTitle_id": subTitle_id,  # 각 subTitle에 대한 고유 ID 생성
+                "subTitle": "",
+                "letter": "",
+                "feedback": ""
+            }]
+        }
+
+        result = db.letters.insert_one(letter_data)
+        mainTitle_id = result.inserted_id
+
+        # ObjectId를 문자열로 변환하여 JSON 응답에 포함
+        return jsonify({
+            'status': 200,
+            'message': 'Letter added successfully',
+            'mainTitle_id': str(mainTitle_id),
+            'subTitle_id': str(subTitle_id)
+        }), 200
+        
     except Exception as e:
         print(e)
-        return jsonify({'status': 200, 'messarge': 'Lette added Fale'}), 500
+        return jsonify({'status': 500, 'message': 'Internal server error occurred.'}), 500
 
-if __name__ == '__main__':
-    app.run(debug=True)
 
+
+@app.route('/loadletter', methods=['POST'])
+def load_letter():
+    data = request.json
+    email = data.get('email') #접속한 유저정보 
+    mainTitle_id = data.get('mainTitle_id')
+    subTitle_id = data.get('subTitle_id')
+    if not email or not mainTitle_id or not subTitle_id:
+        return jsonify({'status': 400, 'message': 'Missing required fields'}), 400 #도착 데이터가 없을 때
+    
+    MONGO_URI = database_url
+    client = MongoClient(MONGO_URI)
+    db = client.monoletter
+
+    # 이메일 일치 사용자 확인
+    user = db.users.find_one({"email": email})
+    if not user:
+        return jsonify({'status': 400, 'message': 'User not found'}), 400 
+    userId = user['_id']
+    # 접속한 유저가 자기소개서를 작성한 유저와 같은지 확인 
+    check = db.letters.find_one({"userId": ObjectId(userId), "_id": ObjectId(mainTitle_id)})
+
+    # 이메일 일치 사용자 확인
+    user = db.users.find_one({"email": email})
+    if not user:
+        return jsonify({'status': 400, 'message': 'User not found'}), 400 
+    userId = user['_id']
+    # 접속한 유저가 자기소개서를 작성한 유저와 같은지 확인 
+    check = db.letters.find_one({"userId": ObjectId(userId), "_id": ObjectId(mainTitle_id)})
+    if not check:
+        return jsonify({'status': 400, 'message': '접근권한이 없는 사용자입니다.'}), 400
+
+        # 자기소개서 로딩하기
+    try:
+        # 전체 문서를 가져와서 subTitles 배열을 탐색
+        letter = db.letters.find_one({ "_id": ObjectId(mainTitle_id) })
+        if not letter:
+            return jsonify({'status': 400, 'message': 'Letter not found'}), 400
+
+    # subTitles 배열에서 해당 subTitle_id 찾기
+        subTitle = next((sub for sub in letter.get('subTitles', []) if sub.get('subTitle_id') == ObjectId(subTitle_id)), None)
+        if not subTitle:
+            return jsonify({'status': 400, 'message': 'SubTitle not found'}), 400
+
+        # 찾은 subTitle 정보 반환
+        return jsonify({
+            'status': 200,
+            'message': 'Letter loaded successfully',
+            'subTitle': subTitle.get('subTitle', ''),
+            'letter': subTitle.get('letter', ''),
+            'feedback': subTitle.get('feedback', '')}), 200
+
+    except Exception as e:
+        print(e)
+        return jsonify({'status': 500, 'message': 'Internal server error occurred.'}), 500
+    
+    #----------------------------------------모든 db 리턴하기-----------------------------------------------------------------
+@app.route('/loadallletter', methods=['POST'])
+def loadAll_letter():
+    data = request.json
+    email = data.get('email') #접속한 유저정보 
+    mainTitle_id = data.get('mainTitle_id')
+
+    if not email or not mainTitle_id:
+        return jsonify({'status': 400, 'message': 'Missing required fields'}), 400 #도착 데이터가 없을 때
+    
+    MONGO_URI = database_url
+    client = MongoClient(MONGO_URI)
+    db = client.monoletter
+
+    # 이메일 일치 사용자 확인
+    user = db.users.find_one({"email": email})
+    if not user:
+        return jsonify({'status': 400, 'message': 'User not found'}), 400 
+    userId = user['_id']
+    # 접속한 유저가 자기소개서를 작성한 유저와 같은지 확인 
+    check = db.letters.find_one({"userId": ObjectId(userId), "_id": ObjectId(mainTitle_id)})
+    if not check:
+        return jsonify({'status': 400, 'message': '접근권한이 없는 사용자입니다.'}), 400
+
+    try:
+        # 사용자 ID를 기반으로 모든 자소서 문서를 가져옴
+        letters = list(db.letters.find({"userId": ObjectId(userId)}))
+        letters_list = []
+        # 각 자소서 문서에 대해 반복
+        for letter in letters:
+        # 각 자소서 문서의 subTitle 정보를 포함한 전체 정보를 리스트에 추가
+            sub_titles = []
+            for sub_title in letter.get("subTitles", []):
+                sub_titles.append({
+                    "subTitle_id": str(sub_title.get("subTitle_id", "")),  # ObjectId를 문자열로 변환
+                    "subTitle": sub_title.get("subTitle", ""),
+                    "letter": sub_title.get("letter", ""),
+                    "feedback": sub_title.get("feedback", "")
+            })
+        
+            letters_list.append({"mainTitle": letter.get("mainTitle", ""),"mainTitle_id": str(letter.get("_id", "")), "subTitles": sub_titles})
+
+
+    # 모든 정보가 담긴 리스트를 반환
+        return jsonify({
+            'status': 200,
+            'message': 'Letters loaded successfully',
+            'letters': letters_list
+        }), 200
+    except Exception as e:
+        print(e)
+        return jsonify({'status': 500, 'message': 'Internal server error occurred.'}), 500
+
+
+
+@app.route('/saveletter', methods=['POST'])
+def save_letter():
+    data = request.json
+    print(data)
+    email = data.get('email')
+    mainTitle_id = data.get('mainTitle_id')
+    subTitle_id = data.get('subTitle_id')
+    letter = data.get('letter')
+    feedback = data.get('feedback')
+    subTitle = data.get('subTitle')
+    
+    if not email :
+        return jsonify({'status': 400, 'message': '사용자 정보가 없습니다.'}), 400
+    
+      
+    MONGO_URI = database_url
+    client = MongoClient(MONGO_URI)
+    db = client.monoletter
+    # 이메일 일치 사용자 확인
+    user = db.users.find_one({"email": email})
+    if not user:
+        return jsonify({'status': 400, 'message': '회원조회가 불가능한 유저입니다.'}), 400
+    
+    userid = user['_id']
+    check = db.letters.find_one({"userId": ObjectId(userid), "_id": ObjectId(mainTitle_id)})
+    if not check:
+        return jsonify({'status': 400, 'message': '접근권한이 없는 사용자입니다.'}), 400
+    # 자기소개서 저장
+    try:
+        # 사용자의 자기소개서에서 해당 subTitle_id를 찾아 letter와 feedback 업데이트
+        result = db.letters.update_one(
+         {"_id": ObjectId(mainTitle_id), 
+          "subTitles.subTitle_id": ObjectId(subTitle_id)},
+         {"$set": {
+            "subTitles.$.letter": letter,
+            "subTitles.$.feedback": feedback,
+            "subTitles.$.subTitle": subTitle 
+        }}
+    )
+
+        # 업데이트가 성공적으로 이루어졌는지 확인
+        if result.matched_count == 0:
+            return jsonify({'status': 400, 'message': '임시저장에 실패했습니다.'}), 400
+
+        return jsonify({'status': 200, 'message': '성공적으로 저장했습니다.'}), 200
+    except Exception as e:
+        print(e)
+        return jsonify({'status': 500, 'message': 'Internal server error occurred.'}), 500
+    
+    ##--------------------자기소개서 항목 추가하기-----------
+@app.route('/addsubletter', methods=['POST'])
+def add_subletter():
+    data = request.json
+    email = data.get('email')
+    mainTitle_id = data.get('mainTitle_id')
+    
+    if not email or not mainTitle_id:
+        return jsonify({'status': 400, 'message': 'Missing required fields'}), 400
+    
+    MONGO_URI = database_url
+    client = MongoClient(MONGO_URI)
+    db = client.monoletter
+
+    # 이메일 일치 사용자 확인
+    user = db.users.find_one({"email": email})
+    if not user:
+        return jsonify({'status': 400, 'message': 'User not found'}), 400
+    userId = user['_id']
+
+    # 접속한 유저가 자기소개서를 작성한 유저와 같은지 확인
+    check = db.letters.find_one({"userId": ObjectId(userId), "_id": ObjectId(mainTitle_id)})
+    if not check:
+        return jsonify({'status': 400, 'message': '접근권한이 없는 사용자입니다.'}), 400
+    # 자기소개서에 새로운 서브 타이틀 추가
+    try:
+        subTitle_id = ObjectId()
+        new_subTitle = {
+            "subTitle_id": subTitle_id,
+            "subTitle": "",
+            "letter": "",
+            "feedback": ""
+        }
+
+        # 기존 문서에 새로운 서브 타이틀 추가
+        result = db.letters.update_one(
+            {"_id": ObjectId(mainTitle_id)},
+            {"$push": {"subTitles": new_subTitle}}
+        )
+
+        if result.modified_count == 0:
+            return jsonify({'status': 500, 'message': 'Failed to add new subTitle'}), 500
+
+        return jsonify({
+            'status': 200,
+            'message': 'Letter added successfully',
+            'mainTitle_id': str(mainTitle_id),
+            'subTitle_id': str(subTitle_id)
+        }), 200
+        
+    except Exception as e:
+        print(e)
+        return jsonify({'status': 500, 'message': 'Internal server error occurred.'}), 500
+
+    
+    
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port="5000", debug=True)
