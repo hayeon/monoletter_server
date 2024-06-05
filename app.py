@@ -1,11 +1,13 @@
 from flask import Flask,request,jsonify
 from flask_cors import CORS
-from api import api # api.py에서 함수를 import
+from api import api
 import os
 import threading
 from pymongo import MongoClient
-from bson.objectid import ObjectId 
-
+from bson.objectid import ObjectId
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), 'py-hanspell'))
+from getKey import speller
 
 app = Flask(__name__)
 CORS(app)  
@@ -358,7 +360,28 @@ def add_subletter():
         print(e)
         return jsonify({'status': 500, 'message': 'Internal server error occurred.'}), 500
 
+@app.route('/speller', methods=['POST'])
+def check_spelling():
+    letter = request.json.get('letter')
+    res = speller(letter)
+    try:
+        response = {
+            "original": str(res.original),
+            "checked": str(res.checked),
+            "errors": str(res.errors),
+        }
+        print(response)
+        return jsonify(response)
+
     
+
+    
+    except Exception as e:
+        print(e)
+        return jsonify({'status': 500, 'message': 'Internal server error occurred.'}), 500
+
+
+
     
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port="5000", debug=True)
